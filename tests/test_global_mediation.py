@@ -103,7 +103,7 @@ def test_governed_persistence_capability_is_confined_to_effect_executor():
     source_root = Path("src/matverse_stack")
     capability_users = set()
     direct_memory_add_users = set()
-    safe_write_users = set()
+    safe_write_importers = set()
 
     for path in source_root.glob("*.py"):
         text = path.read_text(encoding="utf-8")
@@ -111,9 +111,9 @@ def test_governed_persistence_capability_is_confined_to_effect_executor():
             capability_users.add(path.name)
         if "memory.add(" in text or "self.memory.add(" in text:
             direct_memory_add_users.add(path.name)
-        if "safe_write_json" in text:
-            safe_write_users.add(path.name)
+        if "from .utils import safe_write_json" in text:
+            safe_write_importers.add(path.name)
 
     assert capability_users == {"memory.py", "effect_binding.py"}
     assert direct_memory_add_users == set()
-    assert safe_write_users == {"memory.py"}
+    assert safe_write_importers == {"memory.py"}
