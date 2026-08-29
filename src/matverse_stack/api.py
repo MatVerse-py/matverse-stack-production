@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from .constraint_gate import CausalConstraintRule, MutationContext
 from .memory import MNB
 from .ledger import LedgerEntry
 from .service import MatVerseService
@@ -32,6 +33,12 @@ class MemorySearchRequest(BaseModel):
     top_k: int = 5
 
 
+class MutationEvaluateRequest(BaseModel):
+    mutation: MutationContext
+    constraint: CausalConstraintRule
+    initial_state: Dict[str, Any] = Field(default_factory=dict)
+
+
 @router.get("/health")
 def health() -> Dict[str, Any]:
     return service.get_health()
@@ -44,6 +51,16 @@ def process_api(request: ProcessRequest) -> Dict[str, Any]:
         top_k=request.top_k,
         add_to_memory=request.add_to_memory,
         metadata=request.metadata,
+    )
+
+
+@router.post("/mutation/evaluate")
+def mutation_evaluate_api(request: MutationEvaluateRequest, x_api_key: str = Header(None)) -> Dict[str, Any]:
+    require_api_key(x_api_key)
+    return service.evaluate_mutation(
+        request.mutation,
+        request.constraint,
+        initial_state=request.initial_state or None,
     )
 
 
