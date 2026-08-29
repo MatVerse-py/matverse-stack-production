@@ -1,0 +1,39 @@
+name: Global mediation v1.6
+
+on:
+  push:
+    branches:
+      - ocg/global-mediation-v1.6
+  pull_request:
+    paths:
+      - 'src/matverse_stack/memory.py'
+      - 'src/matverse_stack/effect_binding.py'
+      - 'src/matverse_stack/service.py'
+      - 'src/matverse_stack/api.py'
+      - 'src/matverse_stack/main.py'
+      - 'tests/test_runtime_enforcement.py'
+      - 'tests/test_effect_binding.py'
+      - 'tests/test_global_mediation.py'
+      - '.github/workflows/global-mediation-v1.6.yml'
+
+jobs:
+  test-global-mediation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run v1.4-v1.6 focused tests
+        env:
+          PYTHONPATH: src
+        run: >-
+          python -m pytest -q
+          tests/test_runtime_enforcement.py
+          tests/test_effect_binding.py
+          tests/test_global_mediation.py
