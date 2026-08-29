@@ -24,12 +24,6 @@ class ProcessRequest(BaseModel):
     metadata: Dict[str, Any] = {}
 
 
-class MemoryAddRequest(BaseModel):
-    content: str
-    source: str = "api"
-    metadata: Dict[str, Any] = {}
-
-
 class MemorySearchRequest(BaseModel):
     query: str
     top_k: int = 5
@@ -51,6 +45,11 @@ def health() -> Dict[str, Any]:
     return service.get_health()
 
 
+@router.get("/mediation/status")
+def mediation_status() -> Dict[str, Any]:
+    return service.get_mediation_status()
+
+
 @router.post("/process")
 def process_api(request: ProcessRequest) -> Dict[str, Any]:
     return service.process_query(
@@ -62,38 +61,40 @@ def process_api(request: ProcessRequest) -> Dict[str, Any]:
 
 
 @router.post("/mutation/evaluate")
-def mutation_evaluate_api(request: MutationEvaluateRequest, x_api_key: str = Header(None)) -> Dict[str, Any]:
+def mutation_evaluate_api(
+    request: MutationEvaluateRequest,
+    x_api_key: str = Header(None),
+) -> Dict[str, Any]:
     require_api_key(x_api_key)
     try:
-        # Governing state is runtime-owned. External callers may select a canonical
-        # constraint ID but cannot inject the state against which it is evaluated.
         return service.evaluate_registered_mutation(
             request.mutation,
             request.constraint_id,
         )
     except ConstraintRegistryError as exc:
-        raise HTTPException(status_code=409, detail=f"constraint authority unresolved: {exc}") from exc
+        raise HTTPException(
+            status_code=409,
+            detail=f"constraint authority unresolved: {exc}",
+        ) from exc
 
 
 @router.post("/mutation/execute")
-def mutation_execute_api(request: MutationExecuteRequest, x_api_key: str = Header(None)) -> Dict[str, Any]:
+def mutation_execute_api(
+    request: MutationExecuteRequest,
+    x_api_key: str = Header(None),
+) -> Dict[str, Any]:
     require_api_key(x_api_key)
     try:
-        # The effect payload is cryptographically bound by mutation.payload_hash.
-        # The governing state and canonical constraint rule remain runtime-owned.
         return service.execute_registered_effect(
             request.mutation,
             request.constraint_id,
             request.effect,
         )
     except ConstraintRegistryError as exc:
-        raise HTTPException(status_code=409, detail=f"constraint authority unresolved: {exc}") from exc
-
-
-@router.post("/memory/add")
-def memory_add_api(request: MemoryAddRequest, x_api_key: str = Header(None)) -> MNB:
-    require_api_key(x_api_key)
-    return service.add_mnb(request.content, request.source, request.metadata)
+        raise HTTPException(
+            status_code=409,
+            detail=f"constraint authority unresolved: {exc}",
+        ) from exc
 
 
 @router.post("/memory/search")
@@ -119,7 +120,10 @@ def get_context_api() -> List[MNB]:
 
 
 @router.post("/autogenesis/close")
-def close_autogenesis_api(metadata: Dict[str, Any] = {}, x_api_key: str = Header(None)) -> Dict[str, Any]:
+def close_autogenesis_api(
+    metadata: Dict[str, Any] = {},
+    x_api_key: str = Header(None),
+) -> Dict[str, Any]:
     require_api_key(x_api_key)
     return service.close_autogenesis(metadata)
 
@@ -128,5 +132,5 @@ def close_autogenesis_api(metadata: Dict[str, Any] = {}, x_api_key: str = Header
 def get_receipt_api(index: int) -> Dict[str, Any]:
     try:
         return service.ledger.receipt(index)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
