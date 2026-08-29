@@ -40,6 +40,7 @@ class EffectObservation(BaseModel):
         "READBACK_MISMATCH",
         "BLOCKED_NOT_EXECUTED",
         "NOT_EXECUTED_DECISION",
+        "BINDING_REJECTED",
     ]
     effect_observed: bool
     execution_authorized: bool
@@ -82,10 +83,16 @@ def observe_without_execution(
     effect: MemoryAppendEffectProposal,
     *,
     final_decision: str,
+    binding_rejected: bool = False,
 ) -> EffectObservation:
     before_hash, before_count = _persistent_snapshot(memory.path)
     after_hash, after_count = _persistent_snapshot(memory.path)
-    status = "BLOCKED_NOT_EXECUTED" if final_decision == "BLOCK" else "NOT_EXECUTED_DECISION"
+    if binding_rejected:
+        status = "BINDING_REJECTED"
+    elif final_decision == "BLOCK":
+        status = "BLOCKED_NOT_EXECUTED"
+    else:
+        status = "NOT_EXECUTED_DECISION"
     return EffectObservation(
         effect_status=status,
         effect_observed=False,
@@ -96,7 +103,11 @@ def observe_without_execution(
         effect_count_before=before_count,
         effect_count_after=after_count,
         readback_ok=before_hash == after_hash and before_count == after_count,
-        reason=f"final_decision={final_decision}; effect execution skipped",
+        reason=(
+            "mutation payload_hash does not bind the proposed effect"
+            if binding_rejected
+            else f"final_decision={final_decision}; effect execution skipped"
+        ),
     )
 
 
