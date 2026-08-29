@@ -1,6 +1,10 @@
+import json
 from pathlib import Path
 
+import pytest
+
 from matverse_stack.constraint_gate import CausalConstraintRule, MutationContext, evaluate_constraint
+from matverse_stack.constraint_registry import ConstraintRegistry, ConstraintRegistryError
 from matverse_stack.ledger import Ledger
 from matverse_stack.service import MatVerseService
 
@@ -31,9 +35,17 @@ def _v2() -> CausalConstraintRule:
 
 
 def _service(tmp_path: Path) -> MatVerseService:
-    # evaluate_mutation only requires a ledger. Avoid unrelated upstream/memory IO.
+    registry_path = tmp_path / "causal_constraints.json"
+    registry_path.write_text(
+        json.dumps({"constraints": [_v1().model_dump(), _v2().model_dump()]}),
+        encoding="utf-8",
+    )
+
+    # evaluate_registered_mutation only requires a ledger and constraint registry.
+    # Avoid unrelated upstream/memory IO in this focused experiment.
     service = MatVerseService.__new__(MatVerseService)
     service.ledger = Ledger(tmp_path / "runtime_enforcement_ledger.jsonl")
+    service.constraint_registry = ConstraintRegistry(registry_path)
     return service
 
 
@@ -60,11 +72,15 @@ def test_constraint_pair_changes_decision_without_changing_input_or_initial_stat
     )
     service = _service(tmp_path)
 
-    with_v1 = service.evaluate_mutation(mutation, _v1(), _initial_state())
-    with_v2 = service.evaluate_mutation(mutation, _v2(), _initial_state())
+    with_v1 = service.evaluate_registered_mutation(mutation, V1_ID, _initial_state())
+    with_v2 = service.evaluate_registered_mutation(mutation, V2_ID, _initial_state())
 
     assert with_v1["input_hash"] == with_v2["input_hash"]
     assert with_v1["state_hash_before"] == with_v2["state_hash_before"]
+    assert with_v1["constraint_authority"] == "CANONICAL_CONSTRAINT_REGISTRY"
+    assert with_v2["constraint_authority"] == "CANONICAL_CONSTRAINT_REGISTRY"
+    assert with_v1["registry_record_hash"]
+    assert with_v2["registry_record_hash"]
     assert with_v1["sgsi_decision"] == "PASS"
     assert with_v2["sgsi_decision"] == "PASS"
     assert with_v1["final_decision"] == "BLOCK"
@@ -87,8 +103,8 @@ def test_successor_preserves_hazardous_block(tmp_path):
     )
     service = _service(tmp_path)
 
-    with_v1 = service.evaluate_mutation(mutation, _v1(), _initial_state())
-    with_v2 = service.evaluate_mutation(mutation, _v2(), _initial_state())
+    with_v1 = service.evaluate_registered_mutation(mutation, V1_ID, _initial_state())
+    with_v2 = service.evaluate_registered_mutation(mutation, V2_ID, _initial_state())
 
     assert with_v1["final_decision"] == "BLOCK"
     assert with_v2["final_decision"] == "BLOCK"
@@ -118,3 +134,15 @@ def test_superseded_constraint_is_not_enforced():
     result = evaluate_constraint(mutation, superseded)
     assert result.decision == "INACTIVE"
     assert result.activated_constraint_ids == []
+
+
+def test_registry_fails_closed_for_unknown_constraint(tmp_path):
+    service = _service(tmp_path)
+    mutation = MutationContext(
+        mutation_id="paired-005",
+        mutation_class="UNSCOPED_WRITE",
+        confidence=0.65,
+    )
+
+    with pytest.raises(ConstraintRegistryError):
+        service.evaluate_registered_mutation(mutation, "missing-constraint", _initial_state())
