@@ -5,6 +5,7 @@ from matverse_stack.instrumented_homeostasis import (
     BASELINE_UNITS,
     PERTURBED_UNITS,
     PREREG_SHA256,
+    TARGET_CPU_RATIO,
     run_instrumented_experiment,
     run_resource_pair,
     run_stack_validation,
@@ -22,7 +23,8 @@ def test_resource_pair_uses_observed_process_telemetry_and_recovers():
     assert pair.baseline.work_units == BASELINE_UNITS
     assert pair.control.work_units == PERTURBED_UNITS
     assert pair.regulated_history[0].work_units == PERTURBED_UNITS
-    assert pair.regulated_final.work_units == BASELINE_UNITS
+    assert pair.target_cpu_ms == pair.baseline.process_cpu_ms * TARGET_CPU_RATIO
+    assert pair.regulated_final.process_cpu_ms <= pair.target_cpu_ms
     assert pair.regulated_final.process_cpu_ms < pair.control.process_cpu_ms
     assert pair.cpu_reduction >= 0.60
     assert pair.recovery_steps <= 4
