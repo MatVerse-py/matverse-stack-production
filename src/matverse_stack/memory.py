@@ -16,9 +16,8 @@ class UnmediatedMemoryWriteError(RuntimeError):
     """Raised when code attempts to persist organism memory outside the governed effect path."""
 
 
-# Process-local capability. This is an application-architecture boundary, not a
-# hostile-code sandbox. Only the governed effect executor in effect_binding.py
-# imports the module-private append function that holds this capability.
+# Process-local application capability. It protects application surfaces from
+# accidental/legacy bypass; it is not claimed as hostile in-process code isolation.
 _MEMORY_WRITE_CAPABILITY = object()
 
 
@@ -52,15 +51,15 @@ class GeometricMemory:
             self.stm = [item for item in self.ltm if item.psi > 0.8][-10:]
             self.buffer = self.stm[-5:]
 
-    def _save(self) -> None:
+    def _save(self, *, capability: object | None = None) -> None:
+        if capability is not _MEMORY_WRITE_CAPABILITY:
+            raise UnmediatedMemoryWriteError(
+                "direct GeometricMemory._save is disabled; persistent state requires governed authority"
+            )
         safe_write_json(self.path, [item.model_dump() for item in self.ltm])
 
     def add(self, content: str, source: str, metadata: Dict[str, Any]) -> MNB:
-        """Reject legacy direct persistent writes.
-
-        All organism-memory writes must traverse the governed mutation/effect path.
-        Read/search operations remain available directly.
-        """
+        """Reject legacy direct persistent writes."""
         raise UnmediatedMemoryWriteError(
             "direct GeometricMemory.add is disabled; use the governed mutation/effect path"
         )
@@ -98,7 +97,7 @@ class GeometricMemory:
         if len(self.buffer) > 5:
             self.buffer.pop(0)
 
-        self._save()
+        self._save(capability=capability)
         return mnb
 
     def search(self, query: str, top_k: int = 5) -> List[MNB]:
