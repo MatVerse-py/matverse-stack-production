@@ -32,7 +32,7 @@ class CausalConstraintRule(BaseModel):
 
 class ConstraintDecision(BaseModel):
     decision: Literal["BLOCK", "PASS", "INACTIVE"]
-    activated_constraint_ids: List[str] = []
+    activated_constraint_ids: List[str] = Field(default_factory=list)
     reason: str
 
 
@@ -45,28 +45,24 @@ def evaluate_constraint(
     if constraint.status != "ACTIVE":
         return ConstraintDecision(
             decision="INACTIVE",
-            activated_constraint_ids=[],
             reason=f"constraint_status={constraint.status}",
         )
 
     if mutation.mutation_class != constraint.mutation_class:
         return ConstraintDecision(
             decision="PASS",
-            activated_constraint_ids=[],
             reason="mutation_class_not_matched",
         )
 
     if mutation.confidence >= constraint.confidence_lt:
         return ConstraintDecision(
             decision="PASS",
-            activated_constraint_ids=[],
             reason="confidence_above_or_equal_threshold",
         )
 
     if constraint.allow_if_compensating_guard and mutation.compensating_guard:
         return ConstraintDecision(
             decision="PASS",
-            activated_constraint_ids=[],
             reason="compensating_guard_bypass",
         )
 
