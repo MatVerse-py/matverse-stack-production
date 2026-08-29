@@ -128,6 +128,10 @@ def test_same_operation_v1_blocks_and_v2_persists_observable_effect(tmp_path):
     assert persisted.metadata["mutation_id"] == mutation.mutation_id
     assert persisted.metadata["effect_payload_hash"] == effect_payload_hash(effect)
 
+    assert with_v1["authorization_entry_hash"]
+    assert with_v2["authorization_entry_hash"]
+    assert with_v1["authorization_receipt"]["entry_hash"] == with_v1["authorization_entry_hash"]
+    assert with_v2["authorization_receipt"]["entry_hash"] == with_v2["authorization_entry_hash"]
     assert with_v1["receipt"]["entry_hash"]
     assert with_v2["receipt"]["entry_hash"]
     assert service.ledger.verify_integrity() is True
@@ -194,7 +198,7 @@ def test_non_pass_sgsi_decision_cannot_execute_even_when_constraint_passes(tmp_p
     assert observation["effect_count_before"] == observation["effect_count_after"] == 0
 
 
-def test_effect_receipt_binds_evaluation_and_persistent_observation(tmp_path):
+def test_effect_receipts_bind_evaluation_authorization_and_observation(tmp_path):
     service = _service(tmp_path)
     effect = _effect()
     mutation = _mutation(effect)
@@ -202,7 +206,50 @@ def test_effect_receipt_binds_evaluation_and_persistent_observation(tmp_path):
     result = service.execute_registered_effect(mutation, V2_ID, effect)
 
     assert result["evaluation_entry_hash"]
+    assert result["authorization_entry_hash"]
+    assert result["authorization_receipt"]["entry_hash"] == result["authorization_entry_hash"]
     assert result["ledger_entry"]["event_type"] == "mutation_effect_bound"
     assert result["receipt"]["entry_hash"] == result["ledger_entry"]["entry_hash"]
     assert result["effect_observation"]["readback_ok"] is True
+    assert service.ledger.verify_integrity() is True
+
+
+def test_authorized_retry_is_idempotent_and_does_not_duplicate_mnb(tmp_path):
+    service = _service(tmp_path)
+    effect = _effect()
+    mutation = _mutation(effect)
+
+    first = service.execute_registered_effect(mutation, V2_ID, effect)
+    retry = service.execute_registered_effect(mutation, V2_ID, effect)
+
+    assert first["effect_observation"]["effect_status"] == "EXECUTED_OBSERVED"
+    assert retry["effect_observation"]["effect_status"] == "ALREADY_EXECUTED_OBSERVED"
+    assert retry["effect_observation"]["effect_observed"] is True
+    assert retry["effect_binding_result"] == "PASS"
+    assert retry["effect_observation"]["mnb_id"] == first["effect_observation"]["mnb_id"]
+    assert len(GeometricMemory(service.memory.path).ltm) == 1
+    assert service.ledger.verify_integrity() is True
+
+
+def test_duplicate_idempotency_key_fails_closed_without_third_write(tmp_path):
+    service = _service(tmp_path)
+    effect = _effect()
+    mutation = _mutation(effect)
+    effect_hash = effect_payload_hash(effect)
+    duplicate_metadata = {
+        "mutation_id": mutation.mutation_id,
+        "effect_payload_hash": effect_hash,
+    }
+
+    service.memory.add(effect.content, effect.source, duplicate_metadata)
+    service.memory.add(effect.content, effect.source, duplicate_metadata)
+    assert len(GeometricMemory(service.memory.path).ltm) == 2
+
+    result = service.execute_registered_effect(mutation, V2_ID, effect)
+
+    assert result["final_decision"] == "PASS"
+    assert result["effect_binding_result"] == "FAIL"
+    assert result["effect_observation"]["effect_status"] == "DUPLICATE_EFFECT_DETECTED"
+    assert result["effect_observation"]["effect_observed"] is False
+    assert len(GeometricMemory(service.memory.path).ltm) == 2
     assert service.ledger.verify_integrity() is True
