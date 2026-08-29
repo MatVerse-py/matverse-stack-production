@@ -1,8 +1,17 @@
 import hashlib
+import importlib.util
 from pathlib import Path
 
-from experiments.run_deployed_closed_loop_homeostasis_v1.9_preflight import run_preflight
 from matverse_stack.deployed_homeostasis_service import PREREG_SHA256
+
+
+def _load_run_preflight():
+    path = Path("experiments/run_deployed_closed_loop_homeostasis_v1.9_preflight.py")
+    spec = importlib.util.spec_from_file_location("matverse_v19_preflight_runner", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_preflight
 
 
 def test_v19_preregistration_hash_is_frozen():
@@ -11,7 +20,7 @@ def test_v19_preregistration_hash_is_frozen():
 
 
 def test_v19_http_process_restart_preflight_passes_but_deployment_stays_hold():
-    report = run_preflight()
+    report = _load_run_preflight()()
     run = report["preflight_run"]
 
     assert report["preflight_result"] == "PASS"
