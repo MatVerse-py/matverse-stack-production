@@ -7,7 +7,7 @@ from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .memory import GeometricMemory
+from .memory import GeometricMemory, _governed_memory_append
 
 
 EFFECT_BINDING_PROTOCOL = "matverse.ocg.effect_binding/0.1.0"
@@ -18,11 +18,7 @@ class EffectBindingError(RuntimeError):
 
 
 class MemoryAppendEffectProposal(BaseModel):
-    """A narrowly scoped, machine-readable proposal to append one MNB.
-
-    This is intentionally not a generic code executor. The only supported effect in
-    v1.5 is an append through the stack's existing GeometricMemory persistence path.
-    """
+    """A narrowly scoped, machine-readable proposal to append one MNB."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -73,8 +69,6 @@ def effect_payload_hash(effect: MemoryAppendEffectProposal) -> str:
 
 
 def _persistent_snapshot(path: Path) -> tuple[str, int]:
-    """Read persistence through a fresh GeometricMemory instance."""
-
     fresh = GeometricMemory(path)
     serialized = [item.model_dump() for item in fresh.ltm]
     return canonical_hash(serialized), len(serialized)
@@ -121,10 +115,8 @@ def execute_memory_append(
 ) -> EffectObservation:
     """Execute one authorized MNB append and verify it by independent readback.
 
-    The pair (mutation_id, effect_payload_hash) is the idempotency key. A retry that
-    finds exactly one matching, valid persisted MNB returns an observed idempotent
-    result without appending again. Multiple matches are treated as an integrity
-    failure rather than silently accepted.
+    The pair (mutation_id, effect_payload_hash) is the idempotency key. Only this
+    governed effect executor holds the application-level memory write capability.
     """
 
     before_hash, before_count = _persistent_snapshot(memory.path)
@@ -179,7 +171,8 @@ def execute_memory_append(
             ),
         )
 
-    mnb = memory.add(
+    mnb = _governed_memory_append(
+        memory,
         content=effect.content,
         source=effect.source,
         metadata={
@@ -187,10 +180,10 @@ def execute_memory_append(
             "mutation_id": mutation_id,
             "effect_payload_hash": proposed_hash,
             "proposal_metadata": effect.metadata,
+            "write_authority": "GOVERNED_EFFECT_CAPABILITY",
         },
     )
 
-    # Independent readback: construct a fresh memory reader from the persisted file.
     fresh = GeometricMemory(memory.path)
     readback = fresh.get(mnb.mnb_id)
     after_hash, after_count = _persistent_snapshot(memory.path)
@@ -202,6 +195,7 @@ def execute_memory_append(
         and readback.content_hash == content_hash
         and readback.metadata.get("mutation_id") == mutation_id
         and readback.metadata.get("effect_payload_hash") == proposed_hash
+        and readback.metadata.get("write_authority") == "GOVERNED_EFFECT_CAPABILITY"
         and after_count == before_count + 1
         and after_hash != before_hash
     )
