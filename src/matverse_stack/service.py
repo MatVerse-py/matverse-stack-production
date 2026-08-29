@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from .config import STACK_API_URL
 from .constraint_gate import CausalConstraintRule, MutationContext, evaluate_constraint
+from .constraint_registry import ConstraintRegistry
 from .ledger import Ledger, LedgerEntry
 from .memory import GeometricMemory, MNB
 from .sgsi import SGSI
@@ -20,6 +21,7 @@ class MatVerseService:
         self.upstream_api = UpstreamAPI()
         self.sgsi = SGSI()
         self.anchor_service = AnchorService()
+        self.constraint_registry = ConstraintRegistry()
 
     @staticmethod
     def _canonical_hash(value: Dict[str, Any]) -> str:
@@ -68,18 +70,34 @@ class MatVerseService:
             "ledger_entry": self.ledger.entries[-1].model_dump(),
         }
 
+    def evaluate_registered_mutation(
+        self,
+        mutation: MutationContext,
+        constraint_id: str,
+        initial_state: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        constraint, registry_record_hash = self.constraint_registry.resolve(constraint_id)
+        return self.evaluate_mutation(
+            mutation,
+            constraint,
+            initial_state=initial_state,
+            constraint_authority="CANONICAL_CONSTRAINT_REGISTRY",
+            registry_record_hash=registry_record_hash,
+        )
+
     def evaluate_mutation(
         self,
         mutation: MutationContext,
         constraint: CausalConstraintRule,
         initial_state: Optional[Dict[str, Any]] = None,
+        constraint_authority: str = "DIRECT_TYPED_RULE_INTERNAL_ONLY",
+        registry_record_hash: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Evaluate a mutation through a typed causal constraint and the SGSI gate.
 
-        This is a decision-level production-binding candidate. It records the exact
-        input, governing-state hash, activated constraint, final decision, ledger
-        entry, and receipt. It deliberately does not claim a downstream mutation
-        effect because this stack does not expose a mutation executor yet.
+        Production-facing callers should use evaluate_registered_mutation so the
+        constraint is resolved from an authoritative registry instead of supplied by
+        the caller. This method remains available for internal tests and adapters.
         """
 
         initial_state = initial_state or {
@@ -109,6 +127,8 @@ class MatVerseService:
             "context": {
                 "constraint_id": constraint.constraint_id,
                 "constraint_status": constraint.status,
+                "constraint_authority": constraint_authority,
+                "registry_record_hash": registry_record_hash,
                 "binding": "typed_causal_constraint_v1",
             },
             **initial_state,
@@ -124,6 +144,8 @@ class MatVerseService:
             "state_hash_before": state_hash_before,
             "mutation": mutation_dict,
             "constraint": constraint_dict,
+            "constraint_authority": constraint_authority,
+            "registry_record_hash": registry_record_hash,
             "constraint_decision": constraint_result.model_dump(),
             "sgsi_decision": sgsi_decision,
             "final_decision": final_decision,
@@ -144,16 +166,16 @@ class MatVerseService:
     def close_autogenesis(self, metadata: Dict[str, Any] = {}) -> Dict[str, Any]:
         status = self.ledger.status()
         anchor_ref = self.anchor_service.anchor_hash(status["merkle_root"])
-        
+
         payload = {
             "merkle_root": status["merkle_root"],
             "total_entries": status["entries"],
             "integrity_ok": status["integrity_ok"],
             "metadata": metadata
         }
-        
+
         entry = self.ledger.close_cycle(payload, anchor_ref=anchor_ref)
-        
+
         return {
             "status": "CLOSED",
             "entry": entry.model_dump(),
