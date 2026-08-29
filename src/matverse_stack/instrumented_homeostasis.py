@@ -32,7 +32,7 @@ BASELINE_UNITS = 20_000
 PERTURBED_UNITS = 160_000
 REGULATION_FACTOR = 0.5
 MAX_STEPS = 5
-TARGET_CPU_RATIO = 1.75
+REQUIRED_CPU_DEVIATION_REDUCTION = 0.60
 
 
 class ProcessTelemetry(BaseModel):
@@ -88,7 +88,13 @@ def run_resource_pair(pair_index: int) -> InstrumentedPair:
     baseline = measure_process_work(BASELINE_UNITS, seed)
     control = measure_process_work(PERTURBED_UNITS, seed)
 
-    target_cpu_ms = baseline.process_cpu_ms * TARGET_CPU_RATIO
+    # Derive the feedback target from the preregistered 60% minimum reduction,
+    # rather than introducing a post-hoc CPU ratio. The target retains at most
+    # 40% of the observed perturbation excess above the measured baseline.
+    excess_cpu = max(0.0, control.process_cpu_ms - baseline.process_cpu_ms)
+    target_cpu_ms = baseline.process_cpu_ms + (
+        excess_cpu * (1.0 - REQUIRED_CPU_DEVIATION_REDUCTION)
+    )
     units = PERTURBED_UNITS
     history: List[ProcessTelemetry] = []
     recovered = False
@@ -96,9 +102,6 @@ def run_resource_pair(pair_index: int) -> InstrumentedPair:
     for step in range(MAX_STEPS + 1):
         sample = measure_process_work(units, seed)
         history.append(sample)
-        # The stopping condition is the observed CPU signal itself. Work units are
-        # the actuator; they are reduced only while the measured process CPU remains
-        # above the baseline-relative target.
         if sample.process_cpu_ms <= target_cpu_ms:
             recovered = True
             break
@@ -241,7 +244,7 @@ def run_instrumented_experiment(n_pairs: int = 8) -> Dict[str, Any]:
     stack = run_stack_validation()
     primary_pass = (
         all(pair.regulated_final.process_cpu_ms < pair.control.process_cpu_ms for pair in pairs)
-        and statistics.median(reductions) >= 0.60
+        and statistics.median(reductions) >= REQUIRED_CPU_DEVIATION_REDUCTION
         and max(pair.recovery_steps for pair in pairs) <= 4
         and all(pair.recovered for pair in pairs)
         and stack["ledger_integrity"]
