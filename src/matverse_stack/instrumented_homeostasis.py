@@ -47,6 +47,7 @@ class InstrumentedPair(BaseModel):
     pair_id: str
     baseline: ProcessTelemetry
     control: ProcessTelemetry
+    target_cpu_ms: float = Field(ge=0.0)
     regulated_history: List[ProcessTelemetry]
     regulated_final: ProcessTelemetry
     recovery_steps: int
@@ -95,7 +96,10 @@ def run_resource_pair(pair_index: int) -> InstrumentedPair:
     for step in range(MAX_STEPS + 1):
         sample = measure_process_work(units, seed)
         history.append(sample)
-        if sample.process_cpu_ms <= target_cpu_ms and units <= BASELINE_UNITS:
+        # The stopping condition is the observed CPU signal itself. Work units are
+        # the actuator; they are reduced only while the measured process CPU remains
+        # above the baseline-relative target.
+        if sample.process_cpu_ms <= target_cpu_ms:
             recovered = True
             break
         if step >= MAX_STEPS:
@@ -110,6 +114,7 @@ def run_resource_pair(pair_index: int) -> InstrumentedPair:
         pair_id=f"IH-{pair_index:02d}",
         baseline=baseline,
         control=control,
+        target_cpu_ms=target_cpu_ms,
         regulated_history=history,
         regulated_final=regulated_final,
         recovery_steps=max(0, len(history) - 1),
