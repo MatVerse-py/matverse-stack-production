@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from matverse_stack.ledger import Ledger
-from matverse_stack.memory import GeometricMemory, UnmediatedMemoryWriteError
+from matverse_stack.memory import GeometricMemory, MNB, UnmediatedMemoryWriteError
 from matverse_stack.service import GLOBAL_MEDIATION_PROTOCOL, MatVerseService
 
 
@@ -38,6 +38,25 @@ def test_direct_geometric_memory_add_fails_closed_without_persistence(tmp_path):
 
     assert GeometricMemory(memory.path).ltm == []
     assert not memory.path.exists()
+
+
+def test_direct_memory_flush_fails_closed_even_after_in_memory_tampering(tmp_path):
+    memory = GeometricMemory(tmp_path / "memory.json")
+    memory.ltm.append(
+        MNB(
+            content="transient-only",
+            content_hash="0" * 64,
+            embedding=[0.0] * 16,
+            geometric_anchor=[0.0] * 16,
+            metadata={"surface": "manual_ltm_tamper"},
+        )
+    )
+
+    with pytest.raises(UnmediatedMemoryWriteError):
+        memory._save()
+
+    assert not memory.path.exists()
+    assert GeometricMemory(memory.path).ltm == []
 
 
 def test_legacy_service_add_mnb_fails_closed_but_evidence_is_recorded(tmp_path):
