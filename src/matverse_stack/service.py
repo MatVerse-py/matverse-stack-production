@@ -76,13 +76,14 @@ class MatVerseService:
         constraint_id: str,
         initial_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        constraint, registry_record_hash = self.constraint_registry.resolve(constraint_id)
+        constraint, registry_record_hash, registry_snapshot_hash = self.constraint_registry.resolve(constraint_id)
         return self.evaluate_mutation(
             mutation,
             constraint,
             initial_state=initial_state,
-            constraint_authority="CANONICAL_CONSTRAINT_REGISTRY",
+            constraint_authority="PINNED_CANONICAL_CONSTRAINT_REGISTRY",
             registry_record_hash=registry_record_hash,
+            registry_snapshot_hash=registry_snapshot_hash,
         )
 
     def evaluate_mutation(
@@ -92,12 +93,13 @@ class MatVerseService:
         initial_state: Optional[Dict[str, Any]] = None,
         constraint_authority: str = "DIRECT_TYPED_RULE_INTERNAL_ONLY",
         registry_record_hash: Optional[str] = None,
+        registry_snapshot_hash: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Evaluate a mutation through a typed causal constraint and the SGSI gate.
 
         Production-facing callers should use evaluate_registered_mutation so the
-        constraint is resolved from an authoritative registry instead of supplied by
-        the caller. This method remains available for internal tests and adapters.
+        constraint is resolved from a deployment-pinned authoritative snapshot instead
+        of supplied by the caller. This method remains available for internal tests.
         """
 
         initial_state = initial_state or {
@@ -118,8 +120,6 @@ class MatVerseService:
 
         constraint_result = evaluate_constraint(mutation, constraint)
 
-        # Fresh SGSI instance makes the paired initial-state comparison explicit and
-        # prevents state leakage (e.g. fail_closed_active) between experimental arms.
         runtime_gate = SGSI()
         sgsi_input = {
             "type": "mutation_evaluation",
@@ -129,6 +129,7 @@ class MatVerseService:
                 "constraint_status": constraint.status,
                 "constraint_authority": constraint_authority,
                 "registry_record_hash": registry_record_hash,
+                "registry_snapshot_hash": registry_snapshot_hash,
                 "binding": "typed_causal_constraint_v1",
             },
             **initial_state,
@@ -146,6 +147,7 @@ class MatVerseService:
             "constraint": constraint_dict,
             "constraint_authority": constraint_authority,
             "registry_record_hash": registry_record_hash,
+            "registry_snapshot_hash": registry_snapshot_hash,
             "constraint_decision": constraint_result.model_dump(),
             "sgsi_decision": sgsi_decision,
             "final_decision": final_decision,
@@ -166,16 +168,13 @@ class MatVerseService:
     def close_autogenesis(self, metadata: Dict[str, Any] = {}) -> Dict[str, Any]:
         status = self.ledger.status()
         anchor_ref = self.anchor_service.anchor_hash(status["merkle_root"])
-
         payload = {
             "merkle_root": status["merkle_root"],
             "total_entries": status["entries"],
             "integrity_ok": status["integrity_ok"],
             "metadata": metadata
         }
-
         entry = self.ledger.close_cycle(payload, anchor_ref=anchor_ref)
-
         return {
             "status": "CLOSED",
             "entry": entry.model_dump(),
