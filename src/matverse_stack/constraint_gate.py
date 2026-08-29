@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MutationContext(BaseModel):
@@ -13,6 +13,21 @@ class MutationContext(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     compensating_guard: bool = False
     payload_hash: Optional[str] = None
+
+
+class GovernanceEvaluationState(BaseModel):
+    """Validated, runtime-owned state accepted by the focused mutation evaluator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    psi: float = Field(default=0.95, ge=0.0, le=1.0)
+    theta: float = Field(default=0.95, ge=0.0, le=1.0)
+    pole: float = Field(default=0.95, ge=0.0, le=1.0)
+    losses: List[float] = Field(default_factory=list)
+    latency_ms: int = Field(default=0, ge=0)
+    replay_ok: bool = True
+    receipt_ok: bool = True
+    publication_ok: bool = True
 
 
 class CausalConstraintRule(BaseModel):
