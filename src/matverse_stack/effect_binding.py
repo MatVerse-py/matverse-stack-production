@@ -37,6 +37,8 @@ class EffectObservation(BaseModel):
     effect_type: Literal["MNB_APPEND"] = "MNB_APPEND"
     effect_status: Literal[
         "EXECUTED_OBSERVED",
+        "ALREADY_EXECUTED_OBSERVED",
+        "DUPLICATE_EFFECT_DETECTED",
         "READBACK_MISMATCH",
         "BLOCKED_NOT_EXECUTED",
         "NOT_EXECUTED_DECISION",
@@ -117,11 +119,65 @@ def execute_memory_append(
     *,
     mutation_id: str,
 ) -> EffectObservation:
-    """Execute one authorized MNB append and verify it by independent readback."""
+    """Execute one authorized MNB append and verify it by independent readback.
+
+    The pair (mutation_id, effect_payload_hash) is the idempotency key. A retry that
+    finds exactly one matching, valid persisted MNB returns an observed idempotent
+    result without appending again. Multiple matches are treated as an integrity
+    failure rather than silently accepted.
+    """
 
     before_hash, before_count = _persistent_snapshot(memory.path)
     proposed_hash = effect_payload_hash(effect)
     content_hash = hashlib.sha256(effect.content.encode("utf-8")).hexdigest()
+
+    fresh_before = GeometricMemory(memory.path)
+    existing = [
+        item
+        for item in fresh_before.ltm
+        if item.metadata.get("mutation_id") == mutation_id
+        and item.metadata.get("effect_payload_hash") == proposed_hash
+    ]
+
+    if len(existing) > 1:
+        return EffectObservation(
+            effect_status="DUPLICATE_EFFECT_DETECTED",
+            effect_observed=False,
+            execution_authorized=True,
+            effect_payload_hash=proposed_hash,
+            effect_state_hash_before=before_hash,
+            effect_state_hash_after=before_hash,
+            effect_count_before=before_count,
+            effect_count_after=before_count,
+            content_hash=content_hash,
+            readback_ok=False,
+            reason="multiple persisted effects share the same idempotency key",
+        )
+
+    if len(existing) == 1:
+        item = existing[0]
+        valid_existing = item.content == effect.content and item.content_hash == content_hash
+        return EffectObservation(
+            effect_status=(
+                "ALREADY_EXECUTED_OBSERVED" if valid_existing else "READBACK_MISMATCH"
+            ),
+            effect_observed=valid_existing,
+            execution_authorized=True,
+            effect_payload_hash=proposed_hash,
+            effect_state_hash_before=before_hash,
+            effect_state_hash_after=before_hash,
+            effect_count_before=before_count,
+            effect_count_after=before_count,
+            mnb_id=item.mnb_id,
+            content_hash=content_hash,
+            readback_content_hash=item.content_hash,
+            readback_ok=valid_existing,
+            reason=(
+                "authorized effect already persisted; retry was idempotent"
+                if valid_existing
+                else "existing idempotency record does not match proposed content"
+            ),
+        )
 
     mnb = memory.add(
         content=effect.content,
