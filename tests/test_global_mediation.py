@@ -120,19 +120,31 @@ def test_public_api_and_ui_have_no_direct_memory_write_surface():
 
 def test_governed_persistence_capability_is_confined_to_effect_executor():
     source_root = Path("src/matverse_stack")
-    capability_users = set()
+    governed_append_users = set()
+    private_capability_users = set()
+    private_append_method_users = set()
     direct_memory_add_users = set()
     safe_write_importers = set()
+    memory_path_users = set()
 
     for path in source_root.glob("*.py"):
         text = path.read_text(encoding="utf-8")
         if "_governed_memory_append" in text:
-            capability_users.add(path.name)
+            governed_append_users.add(path.name)
+        if "_MEMORY_WRITE_CAPABILITY" in text:
+            private_capability_users.add(path.name)
+        if "_append_with_capability" in text:
+            private_append_method_users.add(path.name)
         if "memory.add(" in text or "self.memory.add(" in text:
             direct_memory_add_users.add(path.name)
         if "from .utils import safe_write_json" in text:
             safe_write_importers.add(path.name)
+        if "MEMORY_PATH" in text:
+            memory_path_users.add(path.name)
 
-    assert capability_users == {"memory.py", "effect_binding.py"}
+    assert governed_append_users == {"memory.py", "effect_binding.py"}
+    assert private_capability_users == {"memory.py"}
+    assert private_append_method_users == {"memory.py"}
     assert direct_memory_add_users == set()
     assert safe_write_importers == {"memory.py"}
+    assert memory_path_users == {"config.py", "memory.py"}
