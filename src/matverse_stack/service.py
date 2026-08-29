@@ -5,7 +5,12 @@ import json
 from typing import Any, Dict, List, Optional
 
 from .config import STACK_API_URL
-from .constraint_gate import CausalConstraintRule, MutationContext, evaluate_constraint
+from .constraint_gate import (
+    CausalConstraintRule,
+    GovernanceEvaluationState,
+    MutationContext,
+    evaluate_constraint,
+)
 from .constraint_registry import ConstraintRegistry
 from .ledger import Ledger, LedgerEntry
 from .memory import GeometricMemory, MNB
@@ -97,31 +102,22 @@ class MatVerseService:
     ) -> Dict[str, Any]:
         """Evaluate a mutation through a typed causal constraint and the SGSI gate.
 
-        Production-facing callers should use evaluate_registered_mutation so the
-        constraint is resolved from a deployment-pinned authoritative snapshot instead
-        of supplied by the caller. This method remains available for internal tests.
+        Production-facing callers use evaluate_registered_mutation. The optional
+        initial_state is internal/test-only and is strictly validated; reserved event,
+        stimulus, and authority fields cannot be injected through it.
         """
 
-        initial_state = initial_state or {
-            "psi": 0.95,
-            "theta": 0.95,
-            "pole": 0.95,
-            "losses": [],
-            "latency_ms": 0,
-            "replay_ok": True,
-            "receipt_ok": True,
-            "publication_ok": True,
-        }
-
+        governing_state = GovernanceEvaluationState.model_validate(initial_state or {}).model_dump()
         mutation_dict = mutation.model_dump()
         constraint_dict = constraint.model_dump()
         input_hash = self._canonical_hash(mutation_dict)
-        state_hash_before = self._canonical_hash(initial_state)
+        state_hash_before = self._canonical_hash(governing_state)
 
         constraint_result = evaluate_constraint(mutation, constraint)
 
         runtime_gate = SGSI()
         sgsi_input = {
+            **governing_state,
             "type": "mutation_evaluation",
             "stimulus": mutation_dict,
             "context": {
@@ -132,7 +128,6 @@ class MatVerseService:
                 "registry_snapshot_hash": registry_snapshot_hash,
                 "binding": "typed_causal_constraint_v1",
             },
-            **initial_state,
         }
         sgsi_result = runtime_gate.process(sgsi_input)
         sgsi_decision = sgsi_result["governance"]["decision"]
