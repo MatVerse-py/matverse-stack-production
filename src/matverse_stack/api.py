@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from .constraint_gate import MutationContext
 from .constraint_registry import ConstraintRegistryError
@@ -37,7 +37,6 @@ class MemorySearchRequest(BaseModel):
 class MutationEvaluateRequest(BaseModel):
     mutation: MutationContext
     constraint_id: str
-    initial_state: Dict[str, Any] = Field(default_factory=dict)
 
 
 @router.get("/health")
@@ -59,13 +58,13 @@ def process_api(request: ProcessRequest) -> Dict[str, Any]:
 def mutation_evaluate_api(request: MutationEvaluateRequest, x_api_key: str = Header(None)) -> Dict[str, Any]:
     require_api_key(x_api_key)
     try:
+        # Governing state is runtime-owned. External callers may select a canonical
+        # constraint ID but cannot inject the state against which it is evaluated.
         return service.evaluate_registered_mutation(
             request.mutation,
             request.constraint_id,
-            initial_state=request.initial_state or None,
         )
     except ConstraintRegistryError as exc:
-        # Fail closed when constitutional authority cannot be resolved exactly once.
         raise HTTPException(status_code=409, detail=f"constraint authority unresolved: {exc}") from exc
 
 
