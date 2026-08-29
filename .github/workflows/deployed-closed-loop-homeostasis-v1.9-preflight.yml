@@ -1,0 +1,53 @@
+name: Deployed closed-loop homeostasis v1.9 preflight
+
+on:
+  push:
+    branches:
+      - ocg/deployed-closed-loop-homeostasis-v1.9
+  pull_request:
+    paths:
+      - "src/matverse_stack/**"
+      - "tests/**"
+      - "experiments/**"
+      - ".github/workflows/deployed-closed-loop-homeostasis-v1.9-preflight.yml"
+
+jobs:
+  deployment-preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Verify frozen v1.9 preregistration hash
+        run: |
+          echo "427f59f607cdbfa0c759ce369d605f1cd9905a9f91d1448ab683a761c7196fc5  experiments/deployed_closed_loop_homeostasis_v1.9_prereg.json" | sha256sum -c -
+      - name: Run HTTP process-restart deployment preflight
+        env:
+          PYTHONPATH: src:.
+        run: |
+          python experiments/run_deployed_closed_loop_homeostasis_v1.9_preflight.py > deployed_closed_loop_homeostasis_v1.9_preflight_report.json
+          sha256sum deployed_closed_loop_homeostasis_v1.9_preflight_report.json
+      - name: Run focused v1.4-v1.9 tests
+        env:
+          PYTHONPATH: src:.
+        run: |
+          python -m pytest -q \
+            tests/test_runtime_enforcement.py \
+            tests/test_effect_binding.py \
+            tests/test_global_mediation.py \
+            tests/test_controlled_homeostasis.py \
+            tests/test_instrumented_homeostasis.py \
+            tests/test_deployed_homeostasis_preflight.py
+      - name: Upload preflight report
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-closed-loop-homeostasis-v1.9-preflight-report
+          path: deployed_closed_loop_homeostasis_v1.9_preflight_report.json
+          if-no-files-found: error
+          retention-days: 30
