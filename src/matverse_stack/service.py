@@ -176,10 +176,10 @@ class MatVerseService:
         """Bind a governed decision to a real, persistent MNB append effect.
 
         The mutation must cryptographically bind the exact effect proposal through
-        mutation.payload_hash. Only a final PASS can execute. BLOCK/ESCALATE/
-        FAIL_CLOSED paths are independently observed to leave persistent memory
-        unchanged. A successful write is independently reloaded from disk before the
-        effect is considered observed.
+        mutation.payload_hash. Only a final PASS can execute. Before execution, the
+        ledger records the authorized proposal and evaluation hash. After execution,
+        persistence is independently reloaded from disk and a second receipt records
+        the observed effect. Retries are idempotent by (mutation_id, effect hash).
         """
 
         mutation_dict = mutation.model_dump()
@@ -220,7 +220,27 @@ class MatVerseService:
             initial_state=initial_state,
         )
 
-        if evaluation["final_decision"] == "PASS":
+        execution_authorized = evaluation["final_decision"] == "PASS"
+        authorization_payload = {
+            "operation_input_hash": operation_input_hash,
+            "mutation_input_hash": evaluation["input_hash"],
+            "evaluation_entry_hash": evaluation["ledger_entry"]["entry_hash"],
+            "constraint_id": constraint_id,
+            "constraint_authority": evaluation["constraint_authority"],
+            "registry_record_hash": evaluation["registry_record_hash"],
+            "registry_snapshot_hash": evaluation["registry_snapshot_hash"],
+            "final_decision": evaluation["final_decision"],
+            "execution_authorized": execution_authorized,
+            "effect_payload_hash": proposed_effect_hash,
+            "effect": effect_dict,
+        }
+        authorization_event = (
+            "mutation_effect_authorized" if execution_authorized else "mutation_effect_not_authorized"
+        )
+        authorization_entry = self.ledger.add_entry(authorization_event, authorization_payload)
+        authorization_receipt = self.ledger.receipt(authorization_entry.index)
+
+        if execution_authorized:
             observation = execute_memory_append(
                 self.memory,
                 effect,
@@ -233,7 +253,7 @@ class MatVerseService:
                 final_decision=evaluation["final_decision"],
             )
 
-        if evaluation["final_decision"] == "PASS":
+        if execution_authorized:
             effect_binding_result = "PASS" if observation.effect_observed else "FAIL"
         else:
             effect_binding_result = "PASS" if observation.readback_ok and not observation.effect_observed else "FAIL"
@@ -247,6 +267,8 @@ class MatVerseService:
             "registry_record_hash": evaluation["registry_record_hash"],
             "registry_snapshot_hash": evaluation["registry_snapshot_hash"],
             "evaluation_entry_hash": evaluation["ledger_entry"]["entry_hash"],
+            "authorization_entry_hash": authorization_entry.entry_hash,
+            "authorization_receipt_leaf": authorization_receipt["leaf"],
             "final_decision": evaluation["final_decision"],
             "binding_valid": True,
             "effect": effect_dict,
@@ -256,6 +278,7 @@ class MatVerseService:
         entry = self.ledger.add_entry("mutation_effect_bound", payload)
         return {
             **payload,
+            "authorization_receipt": authorization_receipt,
             "ledger_entry": entry.model_dump(),
             "receipt": self.ledger.receipt(entry.index),
         }
