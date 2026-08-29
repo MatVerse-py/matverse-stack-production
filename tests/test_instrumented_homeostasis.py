@@ -5,7 +5,7 @@ from matverse_stack.instrumented_homeostasis import (
     BASELINE_UNITS,
     PERTURBED_UNITS,
     PREREG_SHA256,
-    TARGET_CPU_RATIO,
+    REQUIRED_CPU_DEVIATION_REDUCTION,
     run_instrumented_experiment,
     run_resource_pair,
     run_stack_validation,
@@ -23,10 +23,13 @@ def test_resource_pair_uses_observed_process_telemetry_and_recovers():
     assert pair.baseline.work_units == BASELINE_UNITS
     assert pair.control.work_units == PERTURBED_UNITS
     assert pair.regulated_history[0].work_units == PERTURBED_UNITS
-    assert pair.target_cpu_ms == pair.baseline.process_cpu_ms * TARGET_CPU_RATIO
+    expected_target = pair.baseline.process_cpu_ms + max(
+        0.0, pair.control.process_cpu_ms - pair.baseline.process_cpu_ms
+    ) * (1.0 - REQUIRED_CPU_DEVIATION_REDUCTION)
+    assert pair.target_cpu_ms == expected_target
     assert pair.regulated_final.process_cpu_ms <= pair.target_cpu_ms
     assert pair.regulated_final.process_cpu_ms < pair.control.process_cpu_ms
-    assert pair.cpu_reduction >= 0.60
+    assert pair.cpu_reduction >= REQUIRED_CPU_DEVIATION_REDUCTION
     assert pair.recovery_steps <= 4
     assert pair.recovered is True
     assert pair.control.wall_ms > 0
@@ -51,7 +54,7 @@ def test_full_instrumented_report_meets_preregistered_primary_criteria():
     report = run_instrumented_experiment()
 
     assert report["n_pairs"] == 8
-    assert report["median_cpu_reduction"] >= 0.60
+    assert report["median_cpu_reduction"] >= REQUIRED_CPU_DEVIATION_REDUCTION
     assert report["max_recovery_steps"] <= 4
     assert report["all_pairs_final_cpu_better"] is True
     assert report["all_pairs_recovered"] is True
