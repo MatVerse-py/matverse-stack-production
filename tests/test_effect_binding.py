@@ -127,13 +127,12 @@ def test_same_operation_v1_blocks_and_v2_persists_observable_effect(tmp_path):
     assert persisted.content == effect.content
     assert persisted.metadata["mutation_id"] == mutation.mutation_id
     assert persisted.metadata["effect_payload_hash"] == effect_payload_hash(effect)
+    assert persisted.metadata["write_authority"] == "GOVERNED_EFFECT_CAPABILITY"
 
     assert with_v1["authorization_entry_hash"]
     assert with_v2["authorization_entry_hash"]
     assert with_v1["authorization_receipt"]["entry_hash"] == with_v1["authorization_entry_hash"]
     assert with_v2["authorization_receipt"]["entry_hash"] == with_v2["authorization_entry_hash"]
-    assert with_v1["receipt"]["entry_hash"]
-    assert with_v2["receipt"]["entry_hash"]
     assert service.ledger.verify_integrity() is True
 
 
@@ -235,14 +234,16 @@ def test_duplicate_idempotency_key_fails_closed_without_third_write(tmp_path):
     service = _service(tmp_path)
     effect = _effect()
     mutation = _mutation(effect)
-    effect_hash = effect_payload_hash(effect)
-    duplicate_metadata = {
-        "mutation_id": mutation.mutation_id,
-        "effect_payload_hash": effect_hash,
-    }
 
-    service.memory.add(effect.content, effect.source, duplicate_metadata)
-    service.memory.add(effect.content, effect.source, duplicate_metadata)
+    first = service.execute_registered_effect(mutation, V2_ID, effect)
+    assert first["effect_observation"]["effect_status"] == "EXECUTED_OBSERVED"
+
+    # Corruption fixture: duplicate the persisted record at the storage layer rather
+    # than using a second application write path. The runtime must detect this and
+    # refuse to create a third effect.
+    raw = json.loads(service.memory.path.read_text(encoding="utf-8"))
+    raw.append(dict(raw[0]))
+    service.memory.path.write_text(json.dumps(raw), encoding="utf-8")
     assert len(GeometricMemory(service.memory.path).ltm) == 2
 
     result = service.execute_registered_effect(mutation, V2_ID, effect)

@@ -19,10 +19,13 @@ from .effect_binding import (
     observe_without_execution,
 )
 from .ledger import Ledger, LedgerEntry
-from .memory import GeometricMemory, MNB
+from .memory import GeometricMemory, MNB, UnmediatedMemoryWriteError
 from .sgsi import SGSI
 from .upstream import UpstreamAPI
 from .anchor import AnchorService
+
+
+GLOBAL_MEDIATION_PROTOCOL = "matverse.ocg.global_mediation/0.1.0"
 
 
 class MatVerseService:
@@ -39,7 +42,19 @@ class MatVerseService:
         payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def process_query(self, query: str, top_k: int = 3, add_to_memory: bool = False, metadata: Dict[str, Any] = {}) -> Dict[str, Any]:
+    def process_query(
+        self,
+        query: str,
+        top_k: int = 3,
+        add_to_memory: bool = False,
+        metadata: Dict[str, Any] = {},
+    ) -> Dict[str, Any]:
+        """Process a query without allowing the legacy query path to mutate memory.
+
+        `add_to_memory=True` is retained only as a compatibility signal. It is now
+        fail-closed and produces evidence explaining that persistence must be proposed
+        as a typed effect through execute_registered_effect.
+        """
         upstream_result = self.upstream_api.process_query(query, top_k)
 
         sgsi_input = {
@@ -54,21 +69,20 @@ class MatVerseService:
         }
         sgsi_result = self.sgsi.process(sgsi_input)
 
-        mnb: Optional[MNB] = None
-        if add_to_memory and sgsi_result["governance"]["decision"] != "BLOCK":
-            mnb = self.memory.add(
-                content=upstream_result["answer"],
-                source=metadata.get("source", "process_query"),
-                metadata=metadata
-            )
-            sgsi_result["skill"]["mutation_applied"] = True
-            sgsi_result["skill"]["new_mnb_id"] = mnb.mnb_id
+        memory_write_status = "NOT_REQUESTED"
+        if add_to_memory:
+            memory_write_status = "BLOCKED_GLOBAL_MEDIATION_REQUIRED"
+            sgsi_result["skill"]["mutation_applied"] = False
+            sgsi_result["skill"]["memory_write_status"] = memory_write_status
 
         ledger_payload = {
             "query": query,
             "upstream_result": upstream_result,
             "sgsi_result": sgsi_result,
-            "mnb_added": mnb.model_dump() if mnb else None,
+            "mnb_added": None,
+            "memory_write_requested": bool(add_to_memory),
+            "memory_write_status": memory_write_status,
+            "global_mediation_protocol": GLOBAL_MEDIATION_PROTOCOL,
         }
         self.ledger.add_entry("query_processed", ledger_payload)
 
@@ -77,7 +91,8 @@ class MatVerseService:
             "answer": upstream_result["answer"],
             "sgsi_decision": sgsi_result["governance"]["decision"],
             "sgsi_metrics": sgsi_result["metrics"],
-            "mnb_id": mnb.mnb_id if mnb else None,
+            "mnb_id": None,
+            "memory_write_status": memory_write_status,
             "ledger_entry": self.ledger.entries[-1].model_dump(),
         }
 
@@ -87,7 +102,9 @@ class MatVerseService:
         constraint_id: str,
         initial_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        constraint, registry_record_hash, registry_snapshot_hash = self.constraint_registry.resolve(constraint_id)
+        constraint, registry_record_hash, registry_snapshot_hash = self.constraint_registry.resolve(
+            constraint_id
+        )
         return self.evaluate_mutation(
             mutation,
             constraint,
@@ -106,13 +123,6 @@ class MatVerseService:
         registry_record_hash: Optional[str] = None,
         registry_snapshot_hash: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Evaluate a mutation through a typed causal constraint and the SGSI gate.
-
-        Production-facing callers use evaluate_registered_mutation. The optional
-        initial_state is internal/test-only and is strictly validated; reserved event,
-        stimulus, and authority fields cannot be injected through it.
-        """
-
         governing_state = GovernanceEvaluationState.model_validate(initial_state or {}).model_dump()
         mutation_dict = mutation.model_dump()
         constraint_dict = constraint.model_dump()
@@ -173,15 +183,7 @@ class MatVerseService:
         effect: MemoryAppendEffectProposal,
         initial_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Bind a governed decision to a real, persistent MNB append effect.
-
-        The mutation must cryptographically bind the exact effect proposal through
-        mutation.payload_hash. Only a final PASS can execute. Before execution, the
-        ledger records the authorized proposal and evaluation hash. After execution,
-        persistence is independently reloaded from disk and a second receipt records
-        the observed effect. Retries are idempotent by (mutation_id, effect hash).
-        """
-
+        """Bind a governed decision to a persistent MNB append effect."""
         mutation_dict = mutation.model_dump()
         effect_dict = effect.model_dump()
         proposed_effect_hash = effect_payload_hash(effect)
@@ -233,9 +235,12 @@ class MatVerseService:
             "execution_authorized": execution_authorized,
             "effect_payload_hash": proposed_effect_hash,
             "effect": effect_dict,
+            "global_mediation_protocol": GLOBAL_MEDIATION_PROTOCOL,
         }
         authorization_event = (
-            "mutation_effect_authorized" if execution_authorized else "mutation_effect_not_authorized"
+            "mutation_effect_authorized"
+            if execution_authorized
+            else "mutation_effect_not_authorized"
         )
         authorization_entry = self.ledger.add_entry(authorization_event, authorization_payload)
         authorization_receipt = self.ledger.receipt(authorization_entry.index)
@@ -256,7 +261,11 @@ class MatVerseService:
         if execution_authorized:
             effect_binding_result = "PASS" if observation.effect_observed else "FAIL"
         else:
-            effect_binding_result = "PASS" if observation.readback_ok and not observation.effect_observed else "FAIL"
+            effect_binding_result = (
+                "PASS"
+                if observation.readback_ok and not observation.effect_observed
+                else "FAIL"
+            )
 
         payload = {
             "operation_input_hash": operation_input_hash,
@@ -274,6 +283,7 @@ class MatVerseService:
             "effect": effect_dict,
             "effect_observation": observation.model_dump(),
             "effect_binding_result": effect_binding_result,
+            "global_mediation_protocol": GLOBAL_MEDIATION_PROTOCOL,
         }
         entry = self.ledger.add_entry("mutation_effect_bound", payload)
         return {
@@ -284,26 +294,36 @@ class MatVerseService:
         }
 
     def close_autogenesis(self, metadata: Dict[str, Any] = {}) -> Dict[str, Any]:
+        """Evidence-plane closure; this does not mutate governed MNB state."""
         status = self.ledger.status()
         anchor_ref = self.anchor_service.anchor_hash(status["merkle_root"])
         payload = {
             "merkle_root": status["merkle_root"],
             "total_entries": status["entries"],
             "integrity_ok": status["integrity_ok"],
-            "metadata": metadata
+            "metadata": metadata,
         }
         entry = self.ledger.close_cycle(payload, anchor_ref=anchor_ref)
         return {
             "status": "CLOSED",
             "entry": entry.model_dump(),
             "receipt": self.ledger.receipt(entry.index),
-            "anchor": self.anchor_service.get_status()
+            "anchor": self.anchor_service.get_status(),
         }
 
     def add_mnb(self, content: str, source: str, metadata: Dict[str, Any]) -> MNB:
-        mnb = self.memory.add(content, source, metadata)
-        self.ledger.add_entry("mnb_added", mnb.model_dump())
-        return mnb
+        """Fail closed for the legacy direct-memory service surface."""
+        attempt = {
+            "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "source": source,
+            "metadata_hash": self._canonical_hash(metadata),
+            "status": "BLOCKED_GLOBAL_MEDIATION_REQUIRED",
+            "global_mediation_protocol": GLOBAL_MEDIATION_PROTOCOL,
+        }
+        self.ledger.add_entry("unmediated_memory_write_blocked", attempt)
+        raise UnmediatedMemoryWriteError(
+            "direct MatVerseService.add_mnb is disabled; submit a typed MNB_APPEND through the governed mutation/effect path"
+        )
 
     def search_memory(self, query: str, top_k: int = 5) -> List[MNB]:
         return self.memory.search(query, top_k)
@@ -314,6 +334,18 @@ class MatVerseService:
     def get_ledger(self) -> List[LedgerEntry]:
         return self.ledger.get_all_entries()
 
+    def get_mediation_status(self) -> Dict[str, Any]:
+        return {
+            "protocol": GLOBAL_MEDIATION_PROTOCOL,
+            "governed_state_plane": "MNB_MEMORY",
+            "allowed_persistent_effect": "MNB_APPEND_VIA_MUTATION_EXECUTE",
+            "legacy_memory_add": "BLOCKED",
+            "process_query_memory_write": "BLOCKED",
+            "direct_geometric_memory_add": "BLOCKED",
+            "evidence_plane_ledger": "EXEMPT_APPEND_ONLY_EVIDENCE",
+            "anchor_plane": "EVIDENCE_ONLY_NO_CONFIRMED_ONCHAIN_WRITE_IN_CURRENT_IMPLEMENTATION",
+        }
+
     def get_health(self) -> Dict[str, Any]:
         return {
             "status": "ok",
@@ -323,5 +355,6 @@ class MatVerseService:
             "memory_items": len(self.memory.ltm),
             "ledger_entries": len(self.ledger.entries),
             "ledger_status": self.ledger.status(),
-            "anchor_status": self.anchor_service.get_status()
+            "anchor_status": self.anchor_service.get_status(),
+            "global_mediation": self.get_mediation_status(),
         }
