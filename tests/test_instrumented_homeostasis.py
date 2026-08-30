@@ -29,7 +29,11 @@ def test_resource_pair_uses_observed_process_telemetry_and_recovers():
     assert pair.target_cpu_ms == expected_target
     assert pair.regulated_final.process_cpu_ms <= pair.target_cpu_ms
     assert pair.regulated_final.process_cpu_ms < pair.control.process_cpu_ms
-    assert pair.cpu_reduction >= REQUIRED_CPU_DEVIATION_REDUCTION
+    # A single measured process-CPU pair is intentionally not required to
+    # exceed the preregistered 60% reduction threshold. The frozen protocol
+    # defines that threshold on the median across 8 paired observations; the
+    # aggregate criterion is enforced below by
+    # test_full_instrumented_report_meets_preregistered_primary_criteria.
     assert pair.recovery_steps <= 4
     assert pair.recovered is True
     assert pair.control.wall_ms > 0
