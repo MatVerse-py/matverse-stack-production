@@ -19,7 +19,7 @@ from matverse_stack.service import MatVerseService
 
 ROOT = Path(__file__).resolve().parents[1]
 PREREG_PATH = ROOT / "experiments" / "causal_inheritance_v2.0_prereg_v1.1.json"
-EXPECTED_PREREG_SHA256 = "38f71dba67894dcede6884a074c756e1beeedc05e9fed535773d17ca04ba3765"
+EXPECTED_PREREG_SHA256 = "d45cacb44d88db878e06ead3a7398eda998ee2398d70b65b00e2f1a276e12a6e"
 
 
 def _sha256_file(path: Path) -> str:
