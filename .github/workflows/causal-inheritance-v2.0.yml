@@ -28,8 +28,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
-      - name: Measure frozen preregistration v1.1 hash
-        run: sha256sum experiments/causal_inheritance_v2.0_prereg_v1.1.json
+      - name: Verify frozen preregistration v1.1 hash
+        run: |
+          echo "d45cacb44d88db878e06ead3a7398eda998ee2398d70b65b00e2f1a276e12a6e  experiments/causal_inheritance_v2.0_prereg_v1.1.json" | sha256sum -c -
       - name: Run preregistered four-arm causal inheritance experiment
         env:
           PYTHONPATH: src
