@@ -3,6 +3,7 @@ name: Instrumented homeostasis v1.8
 on:
   push:
     branches:
+      - main
       - ocg/instrumented-homeostasis-v1.8
   pull_request:
     paths:
