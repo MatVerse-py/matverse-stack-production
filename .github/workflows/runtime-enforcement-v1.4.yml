@@ -3,6 +3,7 @@ name: Runtime enforcement v1.4
 on:
   push:
     branches:
+      - main
       - ocg/runtime-enforcement-v1.4
   pull_request:
     paths:
