@@ -3,6 +3,7 @@ name: Causal inheritance v2.0
 on:
   push:
     branches:
+      - main
       - ocg/causal-inheritance-v2.0
   pull_request:
     paths:
