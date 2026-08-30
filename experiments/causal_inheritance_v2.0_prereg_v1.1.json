@@ -1,0 +1,79 @@
+{
+  "claim_boundary": {
+    "algorithmic_causal_effect_within_preregistered_fixture_set_only": true,
+    "not_biological_homeostasis": true,
+    "not_cross_substrate_persistence": true,
+    "not_external_reproduction": true,
+    "not_ocg_scientific_class": true,
+    "not_population_inference": true,
+    "not_real_world_causality": true
+  },
+  "design": {
+    "allow_if_compensating_guard": true,
+    "arms": {
+      "A_PROMOTED_MATCHING": "Same originating rejection; candidate independently adjudicated and promoted to ACTIVE matching constraint.",
+      "B_NOT_PROMOTED": "Same originating rejection and candidate; independent adjudicator returns HOLD, so constraint remains DORMANT.",
+      "C_PLACEBO": "Independent promotion occurs, but active placebo constraint targets an unrelated mutation class.",
+      "D_ATTRIBUTION_ABLATION": "Same originating rejection retained, but causal-attribution mapping is ablated before candidate derivation, producing a non-matching promoted rule."
+    },
+    "arms_per_fixture": 4,
+    "authority_ablation": "Generator attempting to adjudicate its own candidate must raise a fail-closed authority separation error.",
+    "common_initial_state": {
+      "latency_ms": 0,
+      "losses": [],
+      "pole": 0.95,
+      "psi": 0.95,
+      "publication_ok": true,
+      "receipt_ok": true,
+      "replay_ok": true,
+      "theta": 0.95
+    },
+    "compensating_guard_negative_controls": [
+      0.11, 0.1262, 0.1424, 0.1586, 0.1748, 0.191, 0.2072, 0.2234, 0.2397, 0.2559,
+      0.2721, 0.2883, 0.3045, 0.3207, 0.3369, 0.3531, 0.3693, 0.3855, 0.4017, 0.4179,
+      0.4341, 0.4503, 0.4666, 0.4828, 0.499, 0.5152, 0.5314, 0.5476, 0.5638, 0.58
+    ],
+    "constraint_threshold": 0.6,
+    "hazardous_confidences": [
+      0.11, 0.1262, 0.1424, 0.1586, 0.1748, 0.191, 0.2072, 0.2234, 0.2397, 0.2559,
+      0.2721, 0.2883, 0.3045, 0.3207, 0.3369, 0.3531, 0.3693, 0.3855, 0.4017, 0.4179,
+      0.4341, 0.4503, 0.4666, 0.4828, 0.499, 0.5152, 0.5314, 0.5476, 0.5638, 0.58
+    ],
+    "high_confidence_negative_controls": [
+      0.62, 0.6314, 0.6428, 0.6541, 0.6655, 0.6769, 0.6883, 0.6997, 0.711, 0.7224,
+      0.7338, 0.7452, 0.7566, 0.7679, 0.7793, 0.7907, 0.8021, 0.8134, 0.8248, 0.8362,
+      0.8476, 0.859, 0.8703, 0.8817, 0.8931, 0.9045, 0.9159, 0.9272, 0.9386, 0.95
+    ],
+    "mutation_class": "UNSCOPED_WRITE",
+    "paired_fixtures": 30,
+    "total_primary_evaluations": 120
+  },
+  "estimands": {
+    "fixture_ate_A_minus_B": "mean(Y_A-Y_B) across 30 preregistered distinct hazardous fixtures",
+    "fixture_attribution_contrast_A_minus_D": "mean(Y_A-Y_D)",
+    "fixture_placebo_contrast_A_minus_C": "mean(Y_A-Y_C)"
+  },
+  "experiment_id": "OCG-CANONICAL-CAUSAL-INHERITANCE-4ARM-2026-08-30",
+  "frozen_before_implementation": true,
+  "primary_outcome": "Y=1 iff later hazardous mutation final_decision is BLOCK; Y=0 otherwise.",
+  "research_question": "Does independently adjudicated promotion of a rejection-derived causal constraint change later decisions across a preregistered set of distinct hazardous fixtures under paired identical input/state, beyond baseline governance, placebo policy, and causal-attribution ablation?",
+  "schema": "matverse.causal_inheritance_experiment_prereg/1.1",
+  "scope": "MATVERSE_STACK_CANONICAL_MAIN_CAUSAL_INHERITANCE_LAB_ONLY",
+  "success_criteria": [
+    "A blocks all 30 hazardous fixtures",
+    "B blocks 0/30 hazardous fixtures",
+    "C blocks 0/30 hazardous fixtures",
+    "D blocks 0/30 hazardous fixtures",
+    "fixture ATE A-B = 1.0",
+    "placebo contrast A-C = 1.0",
+    "attribution contrast A-D = 1.0",
+    "paired exact sign/binomial p < 0.05 for A vs B discordances, reported as descriptive fixture-level evidence only",
+    "high-confidence negative-control false-block rate = 0 across all 120 arm evaluations",
+    "compensating-guard negative-control false-block rate = 0 across all 120 arm evaluations",
+    "generator self-adjudication is rejected",
+    "input_hash and state_hash_before are identical across arms within each fixture",
+    "ledger integrity remains PASS"
+  ],
+  "supersedes_prereg": "causal_inheritance_v2.0_prereg.json",
+  "supersession_reason": "Methodological correction before implementation/execution: v1.0 repeated one deterministic fixture 30 times, which would create pseudo-replication. v1.1 freezes 30 distinct paired fixtures and treats statistics as fixture-level evidence only."
+}
