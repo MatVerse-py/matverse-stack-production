@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from .constraint_gate import MutationContext
+from .constraint_registry import ConstraintRegistryError
 from .memory import MNB
 from .ledger import LedgerEntry
 from .service import MatVerseService
@@ -32,6 +34,11 @@ class MemorySearchRequest(BaseModel):
     top_k: int = 5
 
 
+class MutationEvaluateRequest(BaseModel):
+    mutation: MutationContext
+    constraint_id: str
+
+
 @router.get("/health")
 def health() -> Dict[str, Any]:
     return service.get_health()
@@ -47,6 +54,20 @@ def process_api(request: ProcessRequest) -> Dict[str, Any]:
     )
 
 
+@router.post("/mutation/evaluate")
+def mutation_evaluate_api(request: MutationEvaluateRequest, x_api_key: str = Header(None)) -> Dict[str, Any]:
+    require_api_key(x_api_key)
+    try:
+        # Governing state is runtime-owned. External callers may select a canonical
+        # constraint ID but cannot inject the state against which it is evaluated.
+        return service.evaluate_registered_mutation(
+            request.mutation,
+            request.constraint_id,
+        )
+    except ConstraintRegistryError as exc:
+        raise HTTPException(status_code=409, detail=f"constraint authority unresolved: {exc}") from exc
+
+
 @router.post("/memory/add")
 def memory_add_api(request: MemoryAddRequest, x_api_key: str = Header(None)) -> MNB:
     require_api_key(x_api_key)
@@ -60,8 +81,7 @@ def memory_search_api(request: MemorySearchRequest) -> List[MNB]:
 
 @router.get("/mnb/{mnb_id}")
 def get_mnb_api(mnb_id: str) -> Optional[MNB]:
-    mnb = service.get_mnb(mnb_id)
-    if not mnb:
+    if not (mnb := service.get_mnb(mnb_id)):
         raise HTTPException(status_code=404, detail="MNB not found")
     return mnb
 
