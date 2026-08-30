@@ -8,9 +8,12 @@ on:
   pull_request:
     paths:
       - "src/matverse_stack/causal_inheritance.py"
+      - "src/matverse_stack/instrumented_homeostasis.py"
       - "experiments/causal_inheritance_v2.0_prereg*.json"
+      - "experiments/instrumented_homeostasis_v1.8_prereg.json"
       - "experiments/run_causal_inheritance_v2_0.py"
       - "tests/test_causal_inheritance.py"
+      - "tests/test_instrumented_homeostasis.py"
       - ".github/workflows/causal-inheritance-v2.0.yml"
 
 permissions:
