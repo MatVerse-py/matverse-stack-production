@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from .constraint_gate import MutationContext
 from .constraint_registry import ConstraintRegistryError
+from .effect_binding import MemoryAppendEffectProposal
 from .memory import MNB
 from .ledger import LedgerEntry
 from .service import MatVerseService
@@ -39,6 +40,12 @@ class MutationEvaluateRequest(BaseModel):
     constraint_id: str
 
 
+class MutationExecuteRequest(BaseModel):
+    mutation: MutationContext
+    constraint_id: str
+    effect: MemoryAppendEffectProposal
+
+
 @router.get("/health")
 def health() -> Dict[str, Any]:
     return service.get_health()
@@ -63,6 +70,21 @@ def mutation_evaluate_api(request: MutationEvaluateRequest, x_api_key: str = Hea
         return service.evaluate_registered_mutation(
             request.mutation,
             request.constraint_id,
+        )
+    except ConstraintRegistryError as exc:
+        raise HTTPException(status_code=409, detail=f"constraint authority unresolved: {exc}") from exc
+
+
+@router.post("/mutation/execute")
+def mutation_execute_api(request: MutationExecuteRequest, x_api_key: str = Header(None)) -> Dict[str, Any]:
+    require_api_key(x_api_key)
+    try:
+        # The effect payload is cryptographically bound by mutation.payload_hash.
+        # The governing state and canonical constraint rule remain runtime-owned.
+        return service.execute_registered_effect(
+            request.mutation,
+            request.constraint_id,
+            request.effect,
         )
     except ConstraintRegistryError as exc:
         raise HTTPException(status_code=409, detail=f"constraint authority unresolved: {exc}") from exc
