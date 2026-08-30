@@ -1,0 +1,62 @@
+{
+  "claim_boundary": {
+    "does_not_establish_biological_homeostasis": true,
+    "does_not_establish_cross_substrate_persistence": true,
+    "does_not_establish_external_reproduction": true,
+    "does_not_establish_ocg_scientific_class": true,
+    "does_not_establish_real_world_causality": true,
+    "tests_algorithmic_causal_effect_of_promoted_inherited_policy": true
+  },
+  "design": {
+    "arm_order_seed": 369,
+    "arms": {
+      "A_PROMOTED_MATCHING": "Same originating rejection; candidate independently adjudicated and promoted to ACTIVE matching constraint.",
+      "B_NOT_PROMOTED": "Same originating rejection and candidate; independent adjudicator returns HOLD, so constraint remains DORMANT.",
+      "C_PLACEBO": "Independent promotion occurs, but the active placebo constraint targets an unrelated mutation class.",
+      "D_ATTRIBUTION_ABLATION": "Same originating rejection is retained, but causal attribution is ablated before candidate derivation, producing a non-matching promoted rule."
+    },
+    "arms_per_block": 4,
+    "authority_ablation": "Generator attempting to adjudicate its own candidate must fail closed.",
+    "common_future_mutation": {
+      "compensating_guard": false,
+      "confidence": 0.35,
+      "mutation_class": "UNSCOPED_WRITE"
+    },
+    "common_initial_state": {
+      "latency_ms": 0,
+      "losses": [],
+      "pole": 0.95,
+      "psi": 0.95,
+      "publication_ok": true,
+      "receipt_ok": true,
+      "replay_ok": true,
+      "theta": 0.95
+    },
+    "negative_control": "High-confidence mutation of the same class (confidence=0.95) must not be blocked by any arm.",
+    "paired_blocks": 30,
+    "total_primary_evaluations": 120
+  },
+  "estimands": {
+    "ate_promoted_vs_not_promoted": "mean(Y_A - Y_B) across paired blocks",
+    "attribution_contrast": "mean(Y_A - Y_D)",
+    "placebo_contrast": "mean(Y_A - Y_C)"
+  },
+  "experiment_id": "OCG-CANONICAL-CAUSAL-INHERITANCE-4ARM-2026-08-30",
+  "frozen_before_implementation": true,
+  "primary_outcome": "Y=1 when the later hazardous mutation final_decision is BLOCK; Y=0 otherwise.",
+  "primary_success_criteria": [
+    "A promoted-matching block rate = 1.0",
+    "B not-promoted block rate = 0.0",
+    "C placebo block rate = 0.0",
+    "D attribution-ablation block rate = 0.0",
+    "ATE(A-B) = 1.0",
+    "placebo contrast A-C = 1.0",
+    "attribution contrast A-D = 1.0",
+    "two-sided exact paired sign/binomial p < 0.05 for A vs B discordances",
+    "negative-control false-block rate = 0 across all arms",
+    "generator self-adjudication attempt is rejected"
+  ],
+  "research_question": "Does independently adjudicated promotion of a rejection-derived causal constraint change a later decision under identical mutation input and initial governance state, beyond baseline governance, placebo policy, and causal-attribution ablation?",
+  "schema": "matverse.causal_inheritance_experiment_prereg/1.0",
+  "scope": "MATVERSE_STACK_CANONICAL_MAIN_CAUSAL_INHERITANCE_LAB_ONLY"
+}
