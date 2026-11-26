@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 import os
 from pathlib import Path
@@ -13,7 +14,9 @@ APP_API_KEY = os.getenv("APP_API_KEY", "").strip()
 
 
 def require_api_key(x_api_key: str | None = Header(None)) -> None:
-    if APP_API_KEY and x_api_key != APP_API_KEY:
+    if not APP_API_KEY:
+        raise HTTPException(status_code=503, detail="server_api_key_not_configured")
+    if not x_api_key or not hmac.compare_digest(x_api_key, APP_API_KEY):
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
