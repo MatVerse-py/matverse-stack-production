@@ -126,7 +126,7 @@ curl http://localhost:7860/api/ledger
 | `PORT` | 7860 | Porta do servidor |
 | `SGSI_AGENT_NAME` | MatVerse-Agent | Nome do agente SGSI |
 | `SGSI_AGENT_ORCID` | (vazio) | ORCID do agente |
-| `APP_API_KEY` | (vazio) | Chave de API para endpoints mutáveis |
+| `APP_API_KEY` | obrigatória | Chave de API para endpoints de mutação/avaliação/fechamento |
 
 ## Docker
 
@@ -199,7 +199,8 @@ Ambos os arquivos são salvos em `/data` (configurável via `DATA_DIR`).
 
 ## Segurança
 
-- Endpoints mutáveis (`/api/memory/add`) requerem header `X-API-Key` se `APP_API_KEY` estiver configurada
+- Endpoints de mutação/avaliação/fechamento exigem `X-API-Key`; se `APP_API_KEY` não estiver configurada, respondem `503` (fail-closed), nunca acesso anônimo.
+- O `AnchorService` atual gera somente recibos locais. Envio e confirmação de transações Sepolia não estão implementados; `SEPOLIA_PRIVATE_KEY` não é utilizado.
 - Ledger é imutável e auditável
 - Hashing SHA-256 garante integridade das entradas
 
